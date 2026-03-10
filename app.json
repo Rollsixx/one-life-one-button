@@ -1,13 +1,12 @@
 {
   "expo": {
     "name": "Flow",
-    "slug": "Flow",
+    "slug": "flow",
     "version": "1.0.0",
     "orientation": "portrait",
     "platforms": [
       "ios",
-      "android",
-      "web"
+      "android"
     ],
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -38,6 +37,13 @@
       "eas": {
         "projectId": "a1679f69-83e0-4788-83ff-c9362b6bf1f6"
       }
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a1679f69-83e0-4788-83ff-c9362b6bf1f6"
+    },
+    "owner": "rollsixx"
   }
 }
