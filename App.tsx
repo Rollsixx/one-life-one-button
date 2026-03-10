@@ -502,8 +502,10 @@ export default function App() {
       comboScaleAnim, crownOpacityAnim, crownGlowAnim, slowMoAnim]);
 
   // ── PanResponder ──────────────────────────────────────────────────────────────
-  const checkHitRef = useRef(checkHit);
+  const checkHitRef      = useRef(checkHit);
+  const triggerGameOverRef = useRef(triggerGameOver);
   useEffect(() => { checkHitRef.current = checkHit; }, [checkHit]);
+  useEffect(() => { triggerGameOverRef.current = triggerGameOver; }, [triggerGameOver]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -524,8 +526,23 @@ export default function App() {
         setParallaxOffset({ x: (pageX / SW - 0.5) * 20, y: (pageY / SH - 0.5) * 14 });
         checkHitRef.current(pageX, pageY);
       },
-      onPanResponderRelease:   () => { isDraggingRef.current = false; setIsDragging(false); setFingerPos(null); },
-      onPanResponderTerminate: () => { isDraggingRef.current = false; setIsDragging(false); setFingerPos(null); },
+      onPanResponderRelease: () => {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        setFingerPos(null);
+        // Lifting finger while a target is active = game over
+        if (gameActiveRef.current) {
+          triggerGameOverRef.current();
+        }
+      },
+      onPanResponderTerminate: () => {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        setFingerPos(null);
+        if (gameActiveRef.current) {
+          triggerGameOverRef.current();
+        }
+      },
     })
   ).current;
 
@@ -713,7 +730,7 @@ export default function App() {
           {/* First-play hint */}
           {score === 0 && gameState === 'playing' && (
             <View style={styles.hint} pointerEvents="none">
-              <Text style={styles.hintText}>TAP THE CIRCLES IN ORDER  1 → 2 → 3...</Text>
+              <Text style={styles.hintText}>HOLD & DRAG THROUGH CIRCLES  1 → 2 → 3...</Text>
             </View>
           )}
         </View>
@@ -729,10 +746,11 @@ export default function App() {
             <View style={[styles.divider, { backgroundColor: theme.accent, shadowColor: theme.accent }]} />
             <Text style={styles.bodyText}>Tap the numbered circles{'\n'}in order before time runs out.</Text>
             <View style={[styles.ruleBox, { borderColor: theme.accent + '30' }]}>
-              <Text style={styles.ruleText}>① Hit circle 1 first</Text>
-              <Text style={styles.ruleText}>② Then circle 2, 3...</Text>
-              <Text style={styles.ruleText}>③ Miss one = Game Over</Text>
-              <Text style={[styles.ruleText, { color: theme.accent2 }]}>④ Avoid the ? decoys</Text>
+              <Text style={styles.ruleText}>① Hold your finger down</Text>
+              <Text style={styles.ruleText}>② Drag to hit circles in order</Text>
+              <Text style={styles.ruleText}>③ Lift finger = Game Over</Text>
+              <Text style={styles.ruleText}>④ Miss or time out = Game Over</Text>
+              <Text style={[styles.ruleText, { color: theme.accent2 }]}>⑤ Avoid the ? decoys</Text>
             </View>
 
             {themeUnlocked ? (
