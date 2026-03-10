@@ -31,7 +31,6 @@ const APPROACH_START   = TARGET_R * 3.2;
 const APPROACH_DURATION = 1400;
 const VISIBLE_AHEAD    = 4;
 const GHOST_INTERVAL   = 10;
-const SHIELD_INTERVAL  = 20;
 
 const HIGH_SCORE_KEY   = 'flow_high_score';
 const THEME_UNLOCK_KEY = 'flow_theme_unlocked';
@@ -139,7 +138,6 @@ export default function App() {
   const [finalScore, setFinalScore]         = useState(0);
   const [combo, setCombo]                   = useState(0);
   const [highScore, setHighScore]           = useState(0);
-  const [shields, setShields]               = useState(0);
   const [visibleTargets, setVisibleTargets] = useState<HitTarget[]>([]);
   const [sparks, setSparks]                 = useState<Spark[]>([]);
   const [ghostDecoys, setGhostDecoys]       = useState<GhostDecoy[]>([]);
@@ -159,14 +157,13 @@ export default function App() {
   const crownOpacityAnim = useRef(new Animated.Value(0)).current;
   const crownGlowAnim    = useRef(new Animated.Value(0)).current;
   const speedTierAnim    = useRef(new Animated.Value(1)).current;
-  const shieldScaleAnim  = useRef(new Animated.Value(1)).current;
   const slowMoAnim       = useRef(new Animated.Value(0)).current;
 
   // ── Refs ──────────────────────────────────────────────────────────────────────
   const scoreRef           = useRef(0);
   const comboRef           = useRef(0);
   const highScoreRef       = useRef(0);
-  const shieldsRef         = useRef(0);
+  const ghostDecoysRef     = useRef<GhostDecoy[]>([]);
   const gameActiveRef      = useRef(false);
   const isDraggingRef      = useRef(false);
   const nextHitRef         = useRef(0);
@@ -176,6 +173,9 @@ export default function App() {
   const themeRef           = useRef<ThemeName>('default');
 
   const theme = THEMES[themeName];
+
+  // ── Keep ghostDecoysRef in sync with state ───────────────────────────────────
+  useEffect(() => { ghostDecoysRef.current = ghostDecoys; }, [ghostDecoys]);
 
   // ── Load persisted data ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -191,7 +191,6 @@ export default function App() {
   const playComboSound    = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), []);
   const playMissSound     = useCallback(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error), []);
   const playGhostHitSound = useCallback(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning), []);
-  const playShieldSound   = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), []);
 
   // ── Stop all ──────────────────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
@@ -228,12 +227,6 @@ export default function App() {
     speedTierAnim.setValue(1.8);
     Animated.spring(speedTierAnim, { toValue: 1, friction: 4, tension: 250, useNativeDriver: true }).start();
   }, [speedTierAnim]);
-
-  // ── Shield animation ──────────────────────────────────────────────────────────
-  const animateShield = useCallback(() => {
-    shieldScaleAnim.setValue(1.8);
-    Animated.spring(shieldScaleAnim, { toValue: 1, friction: 4, tension: 250, useNativeDriver: true }).start();
-  }, [shieldScaleAnim]);
 
   // ── Explosion sparks ──────────────────────────────────────────────────────────
   const explode = useCallback((x: number, y: number, color: string, count = 12) => {
@@ -275,10 +268,15 @@ export default function App() {
       Animated.timing(pulseAnim, { toValue: 0.92, duration: 600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
     const ghost: GhostDecoy = { id: ghostIdCounter++, x: pos.x, y: pos.y, color: nextColor, fadeAnim, pulseAnim };
-    setGhostDecoys((g) => [...g, ghost]);
+    ghostDecoysRef.current = [...ghostDecoysRef.current, ghost];
+    setGhostDecoys(ghostDecoysRef.current);
     setTimeout(() => {
       Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setGhostDecoys((g) => g.filter((d) => d.id !== ghost.id));
+        setGhostDecoys((g) => {
+          const updated = g.filter((d) => d.id !== ghost.id);
+          ghostDecoysRef.current = updated;
+          return updated;
+        });
       });
     }, 2500);
     return ghost;
@@ -400,16 +398,6 @@ export default function App() {
         spawnComboPopup(SW / 2, SH * 0.38, tier.label + '!');
       }
 
-      // Shield milestone
-      if (newScore > 0 && newScore % SHIELD_INTERVAL === 0) {
-        const ns = shieldsRef.current + 1;
-        shieldsRef.current = ns;
-        setShields(ns);
-        animateShield();
-        playShieldSound();
-        spawnComboPopup(target.x, target.y - 20, '🛡 SHIELD!');
-      }
-
       // Combo milestone
       if (newCombo % 10 === 0) {
         playComboSound();
@@ -443,8 +431,8 @@ export default function App() {
       refreshVisible();
     },
     [
-      explode, bounceCombo, animateSpeedTier, animateShield,
-      playHitSound, playComboSound, playShieldSound,
+      explode, bounceCombo, animateSpeedTier,
+      playHitSound, playComboSound,
       spawnComboPopup, spawnGhostDecoy,
       ensurePool, getApproachDuration, activateTarget, triggerGameOver, refreshVisible,
     ]
@@ -455,23 +443,15 @@ export default function App() {
     (fx: number, fy: number) => {
       if (!gameActiveRef.current) return;
 
-      const hitGhost = ghostDecoys.find((g) => {
+      // Use ref — always has the latest ghosts, no stale closure issue
+      const hitGhost = ghostDecoysRef.current.find((g) => {
         const dx = fx - g.x, dy = fy - g.y;
         return Math.sqrt(dx * dx + dy * dy) <= HIT_TOLERANCE;
       });
       if (hitGhost) {
-        if (shieldsRef.current > 0) {
-          shieldsRef.current -= 1;
-          setShields(shieldsRef.current);
-          playShieldSound();
-          explode(hitGhost.x, hitGhost.y, '#FFD700', 20);
-          spawnComboPopup(hitGhost.x, hitGhost.y - 30, '🛡 BLOCKED!');
-          setGhostDecoys((g) => g.filter((d) => d.id !== hitGhost.id));
-        } else {
-          playGhostHitSound();
-          explode(hitGhost.x, hitGhost.y, '#FF4F7B', 16);
-          triggerGameOver();
-        }
+        playGhostHitSound();
+        explode(hitGhost.x, hitGhost.y, '#FF4F7B', 16);
+        triggerGameOver();
         return;
       }
 
@@ -481,21 +461,21 @@ export default function App() {
       const dx = fx - activeTarget.x, dy = fy - activeTarget.y;
       if (Math.sqrt(dx * dx + dy * dy) <= HIT_TOLERANCE) handleHit(activeTarget);
     },
-    [handleHit, ghostDecoys, explode, playGhostHitSound, playShieldSound, spawnComboPopup, triggerGameOver]
+    [handleHit, explode, playGhostHitSound, triggerGameOver]
   );
 
   // ── Start game ────────────────────────────────────────────────────────────────
   const startGame = useCallback(() => {
     globalId = 0; sparkId = 0; ghostIdCounter = 0; popupIdCounter = 0;
     POS_POOL.length = 0;
-    scoreRef.current = 0; comboRef.current = 0; shieldsRef.current = 0;
+    scoreRef.current = 0; comboRef.current = 0;
     gameActiveRef.current = true; nextHitRef.current = 1;
     isDraggingRef.current = false;
     prevSpeedTierRef.current = SPEED_TIERS[0].label;
     approachTimers.current.forEach(clearTimeout);
     approachTimers.current = [];
 
-    setScore(0); setCombo(0); setFinalScore(0); setShields(0);
+    setScore(0); setCombo(0); setFinalScore(0);
     setSparks([]); setGhostDecoys([]); setComboPopups([]);
     setFingerPos(null); setIsDragging(false); setMissFlash(false);
     setIsNewHighScore(false); setSpeedTier(SPEED_TIERS[0]);
@@ -708,17 +688,12 @@ export default function App() {
                 <Text style={[styles.hudBest, { color: theme.accent + '99' }]}>BEST {highScore}</Text>
               </View>
 
-              {/* Combo + shield */}
+              {/* Combo */}
               <View style={[styles.hudBlock, { alignItems: 'flex-end' }]}>
                 <Text style={styles.hudLabel}>COMBO</Text>
                 <Animated.Text style={[styles.hudValue, { color: combo >= 10 ? '#FFD700' : '#E8F4FF', transform: [{ scale: comboScaleAnim }] }]}>
                   {combo}x
                 </Animated.Text>
-                {shields > 0 && (
-                  <Animated.Text style={[styles.shieldBadge, { transform: [{ scale: shieldScaleAnim }] }]}>
-                    {'🛡'.repeat(Math.min(shields, 3))}
-                  </Animated.Text>
-                )}
               </View>
             </View>
 
@@ -758,7 +733,6 @@ export default function App() {
               <Text style={styles.ruleText}>② Then circle 2, 3...</Text>
               <Text style={styles.ruleText}>③ Miss one = Game Over</Text>
               <Text style={[styles.ruleText, { color: theme.accent2 }]}>④ Avoid the ? decoys</Text>
-              <Text style={[styles.ruleText, { color: '#60A5FA' }]}>⑤ Every 20 hits = 🛡 Shield</Text>
             </View>
 
             {themeUnlocked ? (
@@ -930,7 +904,6 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace', fontSize: 28, fontWeight: '900', color: '#E8F4FF',
     textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10,
   },
-  shieldBadge: { fontSize: 14, marginTop: 2 },
   progressBg: {
     height: 3, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden',
   },
